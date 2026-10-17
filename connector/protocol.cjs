@@ -43,6 +43,22 @@ function projectGift(data, context) {
   };
 }
 
+function projectGiftCatalog(gifts) {
+  if (!Array.isArray(gifts)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const gift of gifts) {
+    const id = safeId(gift?.id, 32);
+    const name = sanitizeText(gift?.name, 64);
+    const diamondCount = Number(gift?.diamond_count ?? 0);
+    if (!id || !name || seen.has(id)) continue;
+    seen.add(id);
+    result.push({ id, name, diamondCount: Number.isSafeInteger(diamondCount) && diamondCount >= 0 ? diamondCount : 0 });
+    if (result.length >= 100) break;
+  }
+  return result.sort((a, b) => a.diamondCount - b.diamondCount || a.name.localeCompare(b.name));
+}
+
 function validateEnvelope(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Envelope harus object");
   const keys = Object.keys(value).sort();
@@ -76,4 +92,4 @@ function createLineParser(onMessage, onError) {
   };
 }
 
-module.exports = { PROTOCOL_VERSION, MAX_LINE_BYTES, projectGift, validateEnvelope, createLineParser, safeId, sanitizeText };
+module.exports = { PROTOCOL_VERSION, MAX_LINE_BYTES, projectGift, projectGiftCatalog, validateEnvelope, createLineParser, safeId, sanitizeText };

@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { createLineParser, projectGift, PROTOCOL_VERSION } = require("./protocol.cjs");
+const { createLineParser, projectGift, projectGiftCatalog, PROTOCOL_VERSION } = require("./protocol.cjs");
 
 let WebcastPushConnection;
 let connectorVersion = "mock";
@@ -87,6 +87,7 @@ async function handle(message) {
     roomId = BigInt(`0x${crypto.randomBytes(7).toString("hex")}`).toString(10);
     send("ack", { command: "connect", roomId, transport: "mock" }, message.requestId);
     send("connection_state", { status: "connected", roomId, transport: "mock" });
+    send("gift_catalog", { gifts: [{ id: "5655", name: "Rose", diamondCount: 1 }, { id: "5827", name: "Finger Heart", diamondCount: 5 }] });
     return;
   }
   if (!WebcastPushConnection) throw new Error("tiktok-live-connector tidak tersedia");
@@ -121,6 +122,11 @@ async function handle(message) {
     const transport = state.upgradedToWebsocket ? "websocket" : "polling";
     send("ack", { command: "connect", roomId, transport }, message.requestId);
     send("connection_state", { status: "connected", roomId, transport });
+    try {
+      send("gift_catalog", { gifts: projectGiftCatalog(await connection.getAvailableGifts()) });
+    } catch (error) {
+      send("error", { code: "GIFT_CATALOG_FAILED", message: safeError(error, "Daftar gift tidak tersedia"), retryable: true });
+    }
   } catch (error) {
     closeConnection();
     send("error", { code: error?.name || "CONNECT_FAILED", message: safeError(error), retryable: true }, message.requestId);

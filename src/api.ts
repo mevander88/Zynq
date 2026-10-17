@@ -73,5 +73,9 @@ export const demoSnapshot: AppSnapshot = {
   logs: [
     { id: 1, timestamp: new Date().toISOString(), level: "info", message: "Mode pratinjau web", detail: "Jalankan melalui Tauri untuk mengaktifkan backend." }
   ],
-  mockMode: true
+  mockMode: true,
+  giftCatalog: [
+    { id: "5655", name: "Rose", diamondCount: 1 },
+    { id: "5827", name: "Finger Heart", diamondCount: 5 }
+  ]
 };

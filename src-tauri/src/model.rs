@@ -74,6 +74,14 @@ pub struct TargetWindow {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GiftCatalogItem {
+    pub id: String,
+    pub name: String,
+    pub diamond_count: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel { Info, Success, Warning, Error }
 
@@ -107,6 +115,7 @@ pub struct AppSnapshot {
     pub dropped_count: u64,
     pub logs: Vec<EventLog>,
     pub mock_mode: bool,
+    pub gift_catalog: Vec<GiftCatalogItem>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -149,15 +158,16 @@ pub struct RuntimeState {
     pub logs: VecDeque<EventLog>,
     pub next_log_id: u64,
     pub mock_mode: bool,
+    pub gift_catalog: Vec<GiftCatalogItem>,
     pub automation_generation: u64,
 }
 
 impl RuntimeState {
     pub fn new(config: AppConfig) -> Self {
-        Self { revision: 1, connection: ConnectionStatus::Idle, automation: AutomationStatus::Disarmed, room_id: None, username: config.live.username.clone(), transport: None, retry_attempt: 0, status_message: "Siap menghubungkan LIVE".into(), selected_target: None, config, queue_depth: 0, input_count: 0, dropped_count: 0, logs: VecDeque::new(), next_log_id: 1, mock_mode: true, automation_generation: 0 }
+        Self { revision: 1, connection: ConnectionStatus::Idle, automation: AutomationStatus::Disarmed, room_id: None, username: config.live.username.clone(), transport: None, retry_attempt: 0, status_message: "Siap menghubungkan LIVE".into(), selected_target: None, config, queue_depth: 0, input_count: 0, dropped_count: 0, logs: VecDeque::new(), next_log_id: 1, mock_mode: true, gift_catalog: vec![], automation_generation: 0 }
     }
     pub fn snapshot(&self) -> AppSnapshot {
-        AppSnapshot { revision: self.revision, connection: self.connection.clone(), automation: self.automation.clone(), room_id: self.room_id.clone(), username: self.username.clone(), transport: self.transport.clone(), retry_attempt: self.retry_attempt, status_message: self.status_message.clone(), selected_target: self.selected_target.clone(), config: self.config.clone(), config_dirty: false, queue_depth: self.queue_depth, input_count: self.input_count, dropped_count: self.dropped_count, logs: self.logs.iter().cloned().collect(), mock_mode: self.mock_mode }
+        AppSnapshot { revision: self.revision, connection: self.connection.clone(), automation: self.automation.clone(), room_id: self.room_id.clone(), username: self.username.clone(), transport: self.transport.clone(), retry_attempt: self.retry_attempt, status_message: self.status_message.clone(), selected_target: self.selected_target.clone(), config: self.config.clone(), config_dirty: false, queue_depth: self.queue_depth, input_count: self.input_count, dropped_count: self.dropped_count, logs: self.logs.iter().cloned().collect(), mock_mode: self.mock_mode, gift_catalog: self.gift_catalog.clone() }
     }
     pub fn touch(&mut self) { self.revision = self.revision.saturating_add(1); }
     pub fn log(&mut self, level: LogLevel, message: impl Into<String>, detail: Option<String>) {

@@ -48,6 +48,12 @@ export interface TargetWindow {
   foreground: boolean;
 }
 
+export interface GiftCatalogItem {
+  id: string;
+  name: string;
+  diamondCount: number;
+}
+
 export interface EventLog {
   id: number;
   timestamp: string;
@@ -73,6 +79,7 @@ export interface AppSnapshot {
   droppedCount: number;
   logs: EventLog[];
   mockMode: boolean;
+  giftCatalog: GiftCatalogItem[];
 }
 
 export interface CommandError {

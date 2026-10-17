@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { commands, demoSnapshot, getSnapshot, listenSnapshot } from "./api";
-import type { AppConfig, AppSnapshot, CommandError, RepeatMode, Rule, TargetWindow } from "./types";
+import type { AppConfig, AppSnapshot, CommandError, GiftCatalogItem, RepeatMode, Rule, TargetWindow } from "./types";
 
 const KEY_OPTIONS = [
   ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((key) => [`Key${key}`, key]),
@@ -247,7 +247,7 @@ export default function App() {
       </main>
 
       <footer><span>ZYNQ / LOCAL DESKTOP CONTROLLER</span><span>Input dikirim ke Windows; penerimaan oleh game tidak dijamin.</span></footer>
-      {editing && <RuleEditor rule={editing} onSave={saveRule} onClose={() => setEditing(null)} />}
+      {editing && <RuleEditor rule={editing} gifts={snapshot.giftCatalog} onSave={saveRule} onClose={() => setEditing(null)} />}
     </div>
   );
 }
@@ -256,9 +256,13 @@ function TargetButton({ target, selected, onSelect }: { target: TargetWindow; se
   return <button className={`target-item ${selected ? "selected" : ""}`} onClick={onSelect} aria-pressed={selected}><span className="app-initial">{target.processName.slice(0, 1).toUpperCase()}</span><span><strong>{target.title}</strong><small>{target.processName} · PID {target.pid}</small></span><span className="target-state">{target.foreground ? "Foreground" : selected ? "Dipilih" : "Pilih"}</span></button>;
 }
 
-function RuleEditor({ rule: initial, onSave, onClose }: { rule: Rule; onSave: (rule: Rule) => void; onClose: () => void }) {
+function RuleEditor({ rule: initial, gifts, onSave, onClose }: { rule: Rule; gifts: GiftCatalogItem[]; onSave: (rule: Rule) => void; onClose: () => void }) {
   const [rule, setRule] = useState(initial);
   const [error, setError] = useState("");
+  const giftOptions = useMemo(() => {
+    if (!rule.giftId || gifts.some((gift) => gift.id === rule.giftId)) return gifts;
+    return [{ id: rule.giftId, name: rule.giftLabel || `Gift ${rule.giftId}`, diamondCount: 0 }, ...gifts];
+  }, [gifts, rule.giftId, rule.giftLabel]);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!/^\d{1,32}$/.test(rule.giftId) || rule.giftId === "0") { setError("Gift ID harus berupa angka positif, maksimal 32 digit."); return; }
@@ -270,7 +274,7 @@ function RuleEditor({ rule: initial, onSave, onClose }: { rule: Rule; onSave: (r
     <form className="rule-editor" onSubmit={submit} aria-labelledby="editor-title">
       <header><div><p className="eyebrow">RULE EDITOR</p><h2 id="editor-title">Rute gift baru</h2></div><button type="button" className="close-button" onClick={onClose} aria-label="Tutup editor">×</button></header>
       {error && <p className="field-error" role="alert">{error}</p>}
-      <div className="field-pair"><label>Gift ID<input value={rule.giftId} onChange={(event) => setRule({ ...rule, giftId: event.target.value.trim() })} inputMode="numeric" placeholder="Contoh: 5655" /></label><label>Label gift<input value={rule.giftLabel} onChange={(event) => setRule({ ...rule, giftLabel: event.target.value })} maxLength={128} placeholder="Contoh: Rose" /></label></div>
+      <label>Jenis gift<select value={rule.giftId} disabled={giftOptions.length === 0} onChange={(event) => { const gift = giftOptions.find((item) => item.id === event.target.value); setRule({ ...rule, giftId: gift?.id ?? "", giftLabel: gift?.name ?? "" }); }}><option value="">{giftOptions.length === 0 ? "Hubungkan LIVE untuk memuat daftar gift" : "Pilih jenis gift"}</option>{giftOptions.map((gift) => <option key={gift.id} value={gift.id}>{gift.name}{gift.diamondCount > 0 ? ` · ${gift.diamondCount} koin` : ""}</option>)}</select><small className="field-help">Gift ID diisi otomatis dari katalog room LIVE.</small></label>
       <fieldset><legend>Keybind</legend><div className="chord-builder"><label>Modifier<select value={rule.keys.length > 1 ? rule.keys[0] : ""} onChange={(event) => setRule({ ...rule, keys: event.target.value ? [event.target.value, rule.keys.at(-1) ?? "Space"] : [rule.keys.at(-1) ?? "Space"] })}><option value="">Tanpa modifier</option><option value="ControlLeft">Ctrl kiri</option><option value="ShiftLeft">Shift kiri</option><option value="AltLeft">Alt kiri</option></select></label><span>+</span><label>Tombol<select value={rule.keys.at(-1)} onChange={(event) => setRule({ ...rule, keys: rule.keys.length > 1 ? [rule.keys[0], event.target.value] : [event.target.value] })}>{KEY_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><div className="key-preview">{rule.keys.map((key) => <kbd key={key}>{key.replace("Left", "").replace("Key", "")}</kbd>)}</div></div></fieldset>
       <div className="field-grid-three"><label>Durasi tekan <span>ms</span><input type="number" min="10" max="5000" value={rule.holdMs} onChange={(event) => setNumber("holdMs", event.target.value)} /></label><label>Cooldown <span>ms</span><input type="number" min="0" max="600000" value={rule.cooldownMs} onChange={(event) => setNumber("cooldownMs", event.target.value)} /></label><label>Prioritas <span>0–100</span><input type="number" min="0" max="100" value={rule.priority} onChange={(event) => setNumber("priority", event.target.value)} /></label></div>
       <fieldset><legend>Perilaku pengulangan</legend><div className="repeat-options">{(["once", "per_unit", "fixed"] as RepeatMode[]).map((mode) => <label className={rule.repeatMode === mode ? "selected" : ""} key={mode}><input type="radio" name="repeat" value={mode} checked={rule.repeatMode === mode} onChange={() => setRule({ ...rule, repeatMode: mode })} /><strong>{repeatLabel(mode)}</strong><small>{mode === "once" ? "Satu input per gift final" : mode === "per_unit" ? "Mengikuti jumlah streak" : "Jumlah tetap per gift"}</small></label>)}</div></fieldset>

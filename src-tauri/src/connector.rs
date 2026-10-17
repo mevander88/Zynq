@@ -1,4 +1,4 @@
-use crate::model::CommandError;
+use crate::model::{CommandError, GiftCatalogItem};
 use crate::rules::GiftObservation;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -16,6 +16,7 @@ pub enum ConnectorEvent {
     Ready,
     State { status: String, room_id: Option<String>, transport: Option<String>, reason: Option<String> },
     Gift(GiftObservation),
+    GiftCatalog(Vec<GiftCatalogItem>),
     Error { code: String, message: String, retryable: bool },
     Exited(String),
 }
@@ -113,6 +114,7 @@ fn spawn_stdout_reader(stdout: tokio::process::ChildStdout, process_id: String, 
                 "ready" => Some(ConnectorEvent::Ready),
                 "connection_state" => Some(ConnectorEvent::State { status: envelope.payload.get("status").and_then(Value::as_str).unwrap_or("error").to_string(), room_id: envelope.payload.get("roomId").and_then(Value::as_str).map(str::to_string), transport: envelope.payload.get("transport").and_then(Value::as_str).map(str::to_string), reason: envelope.payload.get("reason").and_then(Value::as_str).map(str::to_string) }),
                 "gift" => serde_json::from_value(envelope.payload).map(ConnectorEvent::Gift).ok(),
+                "gift_catalog" => parse_gift_catalog(envelope.payload).map(ConnectorEvent::GiftCatalog),
                 "error" => Some(ConnectorEvent::Error { code: envelope.payload.get("code").and_then(Value::as_str).unwrap_or("CONNECTOR_ERROR").to_string(), message: envelope.payload.get("message").and_then(Value::as_str).unwrap_or("Connector error").chars().take(512).collect(), retryable: envelope.payload.get("retryable").and_then(Value::as_bool).unwrap_or(false) }),
                 "ack" | "pong" => None,
                 _ => { let _ = event_tx.send(ConnectorEvent::Exited("Tipe pesan connector tidak dikenal.".into())); return; }
@@ -121,6 +123,21 @@ fn spawn_stdout_reader(stdout: tokio::process::ChildStdout, process_id: String, 
         }
         let _ = event_tx.send(ConnectorEvent::Exited("Connector berhenti.".into()));
     });
+}
+
+fn parse_gift_catalog(payload: Value) -> Option<Vec<GiftCatalogItem>> {
+    let gifts: Vec<GiftCatalogItem> = serde_json::from_value(payload.get("gifts")?.clone()).ok()?;
+    if gifts.len() > 100 { return None; }
+    let valid = gifts.iter().all(|gift| {
+        !gift.id.is_empty()
+            && gift.id.len() <= 32
+            && gift.id != "0"
+            && gift.id.bytes().all(|byte| byte.is_ascii_digit())
+            && !gift.name.is_empty()
+            && gift.name.chars().count() <= 64
+            && !gift.name.chars().any(char::is_control)
+    });
+    valid.then_some(gifts)
 }
 
 fn spawn_stderr_reader(stderr: tokio::process::ChildStderr, event_tx: mpsc::UnboundedSender<ConnectorEvent>) {
