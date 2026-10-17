@@ -1,0 +1,9 @@
+node_modules/
+connector/node_modules/
+dist/
+src-tauri/target/
+src-tauri/binaries/node-*.exe
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,17 @@
+{
+  "name": "zynq-tiktok-connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated TikTok LIVE adapter for Zynq",
+  "main": "index.cjs",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "tiktok-live-connector": "1.2.0"
+  },
+  "overrides": {
+    "axios": "1.20.0",
+    "protobufjs": "8.8.1"
+  }
+}
