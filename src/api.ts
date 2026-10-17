@@ -28,7 +28,8 @@ export const commands = {
   emergency: () => invoke<void>("emergency_stop"),
   resetEmergency: () => invoke<void>("reset_emergency"),
   emitMockGift: (giftId: string, repeatCount: number, streak: boolean) =>
-    invoke<void>("emit_mock_gift", { giftId, repeatCount, streak })
+    invoke<void>("emit_mock_gift", { giftId, repeatCount, streak }),
+  refreshGiftCatalog: () => invoke<void>("refresh_gift_catalog")
 };
 
 const demoRule = (id: string, giftId: string, label: string, key: string): import("./types").Rule => ({
@@ -73,5 +74,12 @@ export const demoSnapshot: AppSnapshot = {
   logs: [
     { id: 1, timestamp: new Date().toISOString(), level: "info", message: "Mode pratinjau web", detail: "Jalankan melalui Tauri untuk mengaktifkan backend." }
   ],
-  mockMode: true
+  mockMode: true,
+  giftCatalog: [
+    { id: "5655", name: "Rose", diamondCount: 1 },
+    { id: "5827", name: "Finger Heart", diamondCount: 5 }
+  ],
+  giftCatalogStatus: "ready",
+  giftCatalogError: null,
+  configLoadError: null
 };

@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createLineParser, projectGift, validateEnvelope } = require("./protocol.cjs");
+const { createLineParser, projectGift, projectGiftCatalog, validateEnvelope } = require("./protocol.cjs");
 
 test("projects gift ids without precision loss", () => {
   const result = projectGift({ giftId: 5953, userId: "6813181309701719620", msgId: "7137749190944230150", giftType: 1, repeatCount: 3, repeatEnd: true, groupId: "1661887131074", giftName: "Rose" }, { connectionId: "c-1", roomId: "7137728632142843000" });
@@ -22,6 +22,19 @@ test("projects identifiers using the backend digits-only boundary", () => {
   for (const value of [gift.roomId, gift.senderId, gift.giftId, gift.msgId]) {
     assert.match(value, /^[0-9]+$/);
   }
+});
+
+test("normalizes, sorts, and deduplicates the gift catalog", () => {
+  const gifts = projectGiftCatalog([
+    { id: 20, name: "Premium", diamond_count: 10 },
+    { id: 10, name: " Rose\n", diamond_count: 1 },
+    { id: 10, name: "Duplicate", diamond_count: 99 },
+    { id: "unsafe", name: "Ignored", diamond_count: 1 }
+  ]);
+  assert.deepEqual(gifts, [
+    { id: "10", name: "Rose", diamondCount: 1 },
+    { id: "20", name: "Premium", diamondCount: 10 }
+  ]);
 });
 
 test("line parser handles split chunks and CRLF", () => {

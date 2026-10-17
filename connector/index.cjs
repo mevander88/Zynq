@@ -1,7 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
-const { createLineParser, projectGift, PROTOCOL_VERSION } = require("./protocol.cjs");
+const { createLineParser, projectGift, projectGiftCatalog, PROTOCOL_VERSION } = require("./protocol.cjs");
 
 let WebcastPushConnection;
 let connectorVersion = "mock";
@@ -42,6 +42,19 @@ function closeConnection() {
   roomId = null;
 }
 
+async function publishGiftCatalog(requestId = null) {
+  if (mockMode) {
+    send("gift_catalog", { gifts: [{ id: "5655", name: "Rose", diamondCount: 1 }, { id: "5827", name: "Finger Heart", diamondCount: 5 }] }, requestId);
+    return;
+  }
+  if (!connection) throw new Error("Connector belum terhubung");
+  try {
+    send("gift_catalog", { gifts: projectGiftCatalog(await connection.getAvailableGifts()) }, requestId);
+  } catch (error) {
+    send("error", { code: "GIFT_CATALOG_FAILED", message: safeError(error, "Daftar gift tidak tersedia"), retryable: true }, requestId);
+  }
+}
+
 async function handle(message) {
   if (message.seq <= incomingSeq) throw new Error("seq duplikat atau lama");
   if (message.seq !== incomingSeq + 1) throw new Error("gap seq terdeteksi");
@@ -75,6 +88,11 @@ async function handle(message) {
     send("ack", { command: "mock_gift" }, message.requestId);
     return;
   }
+  if (message.type === "refresh_gift_catalog") {
+    if (message.connectionId !== connectionId) throw new Error("connectionId tidak cocok");
+    await publishGiftCatalog(message.requestId);
+    return;
+  }
   if (message.type !== "connect") throw new Error(`Command tidak dikenal: ${message.type}`);
   if (connection) throw new Error("Connector sudah terhubung");
   connectionId = message.connectionId;
@@ -87,6 +105,7 @@ async function handle(message) {
     roomId = BigInt(`0x${crypto.randomBytes(7).toString("hex")}`).toString(10);
     send("ack", { command: "connect", roomId, transport: "mock" }, message.requestId);
     send("connection_state", { status: "connected", roomId, transport: "mock" });
+    await publishGiftCatalog();
     return;
   }
   if (!WebcastPushConnection) throw new Error("tiktok-live-connector tidak tersedia");
@@ -121,6 +140,7 @@ async function handle(message) {
     const transport = state.upgradedToWebsocket ? "websocket" : "polling";
     send("ack", { command: "connect", roomId, transport }, message.requestId);
     send("connection_state", { status: "connected", roomId, transport });
+    await publishGiftCatalog();
   } catch (error) {
     closeConnection();
     send("error", { code: error?.name || "CONNECT_FAILED", message: safeError(error), retryable: true }, message.requestId);

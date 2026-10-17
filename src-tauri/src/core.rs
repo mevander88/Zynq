@@ -20,10 +20,10 @@ pub struct AppCore {
 }
 
 impl AppCore {
-    pub fn new(app: AppHandle, config_path: PathBuf, config: AppConfig) -> Arc<Self> {
+    pub fn new(app: AppHandle, config_path: PathBuf, config: AppConfig, config_load_error: Option<String>) -> Arc<Self> {
         let (worker_tx, mut worker_rx) = mpsc::unbounded_channel();
         let worker = InputWorker::start(worker_tx);
-        let core = Arc::new(Self { app, state: Mutex::new(RuntimeState::new(config)), engine: Mutex::new(RuleEngine::default()), worker, connector: AsyncMutex::new(None), config_path });
+        let core = Arc::new(Self { app, state: Mutex::new(RuntimeState::new(config, config_load_error)), engine: Mutex::new(RuleEngine::default()), worker, connector: AsyncMutex::new(None), config_path });
         let callback_core = core.clone();
         tauri::async_runtime::spawn(async move { while let Some(event) = worker_rx.recv().await { callback_core.handle_worker_event(event); } });
         core.log(LogLevel::Info, "Zynq siap", Some("Automation dimulai dalam keadaan aman.".into()));
@@ -41,7 +41,7 @@ impl AppCore {
         self.disarm("Koneksi baru disiapkan.");
         {
             let mut state = self.state.lock().expect("state poisoned");
-            state.connection = ConnectionStatus::Starting; state.username = normalized.clone(); state.mock_mode = mock_mode; state.status_message = "Menyiapkan connector".into(); state.log(LogLevel::Info, "Menyiapkan koneksi", Some(if mock_mode { "Mode simulasi".into() } else { format!("@{normalized}") }));
+            state.connection = ConnectionStatus::Starting; state.username = normalized.clone(); state.mock_mode = mock_mode; state.gift_catalog.clear(); state.gift_catalog_status = GiftCatalogStatus::Loading; state.gift_catalog_error = None; state.status_message = "Menyiapkan connector".into(); state.log(LogLevel::Info, "Menyiapkan koneksi", Some(if mock_mode { "Mode simulasi".into() } else { format!("@{normalized}") }));
         }
         self.emit();
         let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -58,7 +58,7 @@ impl AppCore {
         self.emit();
         if let Some(client) = self.connector.lock().await.take() { client.shutdown().await; }
         if let Ok(mut engine) = self.engine.lock() { engine.clear_room(); }
-        { let mut state = self.state.lock().expect("state poisoned"); state.connection = ConnectionStatus::Idle; state.room_id = None; state.transport = None; state.status_message = "Siap menghubungkan LIVE".into(); state.log(LogLevel::Info, "Koneksi diputuskan", None); }
+        { let mut state = self.state.lock().expect("state poisoned"); state.connection = ConnectionStatus::Idle; state.room_id = None; state.transport = None; state.gift_catalog.clear(); state.gift_catalog_status = GiftCatalogStatus::Idle; state.gift_catalog_error = None; state.status_message = "Siap menghubungkan LIVE".into(); state.log(LogLevel::Info, "Koneksi diputuskan", None); }
         self.emit();
     }
 
@@ -66,7 +66,7 @@ impl AppCore {
         { let state = self.state.lock().expect("state poisoned"); if state.automation != AutomationStatus::Disarmed { return Err(CommandError::new("AUTOMATION_ACTIVE", "Stop automation sebelum menyimpan konfigurasi.")); } next.revision = state.config.revision.saturating_add(1); }
         validate_config(&next)?;
         config::save(&self.config_path, &next)?;
-        { let mut state = self.state.lock().expect("state poisoned"); state.username = next.live.username.clone(); state.config = next; state.log(LogLevel::Success, "Konfigurasi tersimpan", None); }
+        { let mut state = self.state.lock().expect("state poisoned"); state.username = next.live.username.clone(); state.config = next; state.config_load_error = None; state.log(LogLevel::Success, "Konfigurasi tersimpan", None); }
         self.emit();
         Ok(self.snapshot())
     }
@@ -130,6 +130,33 @@ impl AppCore {
         Ok(())
     }
 
+    pub async fn refresh_gift_catalog(&self) -> Result<(), CommandError> {
+        {
+            let mut state = self.state.lock().expect("state poisoned");
+            if state.connection != ConnectionStatus::Connected { return Err(CommandError::new("NOT_CONNECTED", "Hubungkan LIVE sebelum memuat ulang daftar gift.")); }
+            state.gift_catalog_status = GiftCatalogStatus::Loading;
+            state.gift_catalog_error = None;
+            state.touch();
+        }
+        self.emit();
+        let result = {
+            let connector = self.connector.lock().await;
+            match connector.as_ref() {
+                Some(connector) => connector.request_gift_catalog().await,
+                None => Err(CommandError::new("NOT_CONNECTED", "Connector belum berjalan.")),
+            }
+        };
+        if let Err(error) = &result {
+            let mut state = self.state.lock().expect("state poisoned");
+            state.gift_catalog_status = GiftCatalogStatus::Error;
+            state.gift_catalog_error = Some(error.message.clone());
+            state.touch();
+            drop(state);
+            self.emit();
+        }
+        result
+    }
+
     async fn handle_connector_event(&self, event: ConnectorEvent) {
         match event {
             ConnectorEvent::Ready => self.log(LogLevel::Info, "Connector siap", None),
@@ -139,7 +166,26 @@ impl AppCore {
                 drop(state); if status == "offline" { self.disarm("Koneksi LIVE terputus."); } self.emit();
             }
             ConnectorEvent::Gift(gift) => self.process_gift(gift),
-            ConnectorEvent::Error { code, message, retryable } => self.log(if retryable { LogLevel::Warning } else { LogLevel::Error }, message, Some(code)),
+            ConnectorEvent::GiftCatalog(gifts) => {
+                let count = gifts.len();
+                let mut state = self.state.lock().expect("state poisoned");
+                state.gift_catalog = gifts;
+                state.gift_catalog_status = if count == 0 { GiftCatalogStatus::Empty } else { GiftCatalogStatus::Ready };
+                state.gift_catalog_error = None;
+                state.log(LogLevel::Info, "Daftar gift tersedia", Some(format!("{count} jenis gift dapat dipilih.")));
+                drop(state);
+                self.emit();
+            },
+            ConnectorEvent::Error { code, message, retryable } => {
+                if code == "GIFT_CATALOG_FAILED" {
+                    let mut state = self.state.lock().expect("state poisoned");
+                    state.gift_catalog_status = GiftCatalogStatus::Error;
+                    state.gift_catalog_error = Some(message.clone());
+                    state.log(LogLevel::Warning, "Daftar gift gagal dimuat", Some(message));
+                    drop(state);
+                    self.emit();
+                } else { self.log(if retryable { LogLevel::Warning } else { LogLevel::Error }, message, Some(code)); }
+            },
             ConnectorEvent::Exited(message) => { self.set_connection_error(&message); self.disarm("Connector berhenti."); *self.connector.lock().await = None; }
         }
     }
@@ -167,7 +213,7 @@ impl AppCore {
         let generation = { let mut state = self.state.lock().expect("state poisoned"); state.automation_generation = state.automation_generation.saturating_add(1); if state.automation != AutomationStatus::EmergencyLatched { state.automation = AutomationStatus::Disarmed; } state.queue_depth = 0; state.status_message = reason.into(); state.touch(); state.automation_generation };
         self.worker.cancel(generation); if let Ok(mut engine) = self.engine.lock() { engine.suppress_open_streaks(); } self.emit();
     }
-    fn set_connection_error(&self, message: &str) { let mut state = self.state.lock().expect("state poisoned"); state.connection = ConnectionStatus::Error; state.status_message = "Connector gagal berjalan".into(); state.log(LogLevel::Error, "Connector gagal", Some(message.chars().take(512).collect())); drop(state); self.emit(); }
+    fn set_connection_error(&self, message: &str) { let mut state = self.state.lock().expect("state poisoned"); state.connection = ConnectionStatus::Error; state.gift_catalog_status = GiftCatalogStatus::Error; state.gift_catalog_error = Some("Katalog gift tidak tersedia karena connector berhenti.".into()); state.status_message = "Connector gagal berjalan".into(); state.log(LogLevel::Error, "Connector gagal", Some(message.chars().take(512).collect())); drop(state); self.emit(); }
     fn log(&self, level: LogLevel, message: impl Into<String>, detail: Option<String>) { self.state.lock().expect("state poisoned").log(level, message, detail); self.emit(); }
     fn emit(&self) { let _ = self.app.emit("snapshot", self.snapshot()); }
 }

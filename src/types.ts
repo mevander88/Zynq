@@ -16,6 +16,7 @@ export type AutomationStatus =
   | "faulted";
 
 export type RepeatMode = "once" | "per_unit" | "fixed";
+export type GiftCatalogStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
 export interface Rule {
   id: string;
@@ -48,6 +49,12 @@ export interface TargetWindow {
   foreground: boolean;
 }
 
+export interface GiftCatalogItem {
+  id: string;
+  name: string;
+  diamondCount: number;
+}
+
 export interface EventLog {
   id: number;
   timestamp: string;
@@ -73,6 +80,10 @@ export interface AppSnapshot {
   droppedCount: number;
   logs: EventLog[];
   mockMode: boolean;
+  giftCatalog: GiftCatalogItem[];
+  giftCatalogStatus: GiftCatalogStatus;
+  giftCatalogError: string | null;
+  configLoadError: string | null;
 }
 
 export interface CommandError {
