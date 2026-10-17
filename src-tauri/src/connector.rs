@@ -80,6 +80,10 @@ impl ConnectorClient {
         self.send("mock_gift", Some(&self.connection_id), serde_json::to_value(gift).map_err(|error| CommandError::new("SERIALIZE", error.to_string()))?).await
     }
 
+    pub async fn request_gift_catalog(&self) -> Result<(), CommandError> {
+        self.send("refresh_gift_catalog", Some(&self.connection_id), json!({})).await
+    }
+
     pub async fn shutdown(&self) {
         let _ = self.send("shutdown", Some(&self.connection_id), json!({})).await;
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
@@ -114,7 +118,10 @@ fn spawn_stdout_reader(stdout: tokio::process::ChildStdout, process_id: String, 
                 "ready" => Some(ConnectorEvent::Ready),
                 "connection_state" => Some(ConnectorEvent::State { status: envelope.payload.get("status").and_then(Value::as_str).unwrap_or("error").to_string(), room_id: envelope.payload.get("roomId").and_then(Value::as_str).map(str::to_string), transport: envelope.payload.get("transport").and_then(Value::as_str).map(str::to_string), reason: envelope.payload.get("reason").and_then(Value::as_str).map(str::to_string) }),
                 "gift" => serde_json::from_value(envelope.payload).map(ConnectorEvent::Gift).ok(),
-                "gift_catalog" => parse_gift_catalog(envelope.payload).map(ConnectorEvent::GiftCatalog),
+                "gift_catalog" => Some(match parse_gift_catalog(envelope.payload) {
+                    Some(gifts) => ConnectorEvent::GiftCatalog(gifts),
+                    None => ConnectorEvent::Error { code: "GIFT_CATALOG_FAILED".into(), message: "Daftar gift yang diterima tidak valid.".into(), retryable: true },
+                }),
                 "error" => Some(ConnectorEvent::Error { code: envelope.payload.get("code").and_then(Value::as_str).unwrap_or("CONNECTOR_ERROR").to_string(), message: envelope.payload.get("message").and_then(Value::as_str).unwrap_or("Connector error").chars().take(512).collect(), retryable: envelope.payload.get("retryable").and_then(Value::as_bool).unwrap_or(false) }),
                 "ack" | "pong" => None,
                 _ => { let _ = event_tx.send(ConnectorEvent::Exited("Tipe pesan connector tidak dikenal.".into())); return; }

@@ -16,6 +16,7 @@ export type AutomationStatus =
   | "faulted";
 
 export type RepeatMode = "once" | "per_unit" | "fixed";
+export type GiftCatalogStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
 export interface Rule {
   id: string;
@@ -80,6 +81,9 @@ export interface AppSnapshot {
   logs: EventLog[];
   mockMode: boolean;
   giftCatalog: GiftCatalogItem[];
+  giftCatalogStatus: GiftCatalogStatus;
+  giftCatalogError: string | null;
+  configLoadError: string | null;
 }
 
 export interface CommandError {

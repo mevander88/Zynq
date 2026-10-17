@@ -2,7 +2,10 @@
 
 const PROTOCOL_VERSION = 1;
 const MAX_LINE_BYTES = 16 * 1024;
-const ID = /^[-A-Za-z0-9:.]{1,128}$/;
+// Message types use snake_case (for example `mock_gift` and
+// `refresh_gift_catalog`), while process/request identifiers also use this
+// conservative character boundary.
+const ID = /^[-A-Za-z0-9:._]{1,128}$/;
 
 function sanitizeText(value, max = 128) {
   if (typeof value !== "string") return null;

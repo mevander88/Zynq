@@ -46,6 +46,9 @@ fn reset_emergency(core: State<'_, Arc<AppCore>>) -> Result<(), CommandError> { 
 #[tauri::command]
 async fn emit_mock_gift(core: State<'_, Arc<AppCore>>, gift_id: String, repeat_count: u32, streak: bool) -> Result<(), CommandError> { core.emit_mock_gift(gift_id, repeat_count, streak).await }
 
+#[tauri::command]
+async fn refresh_gift_catalog(core: State<'_, Arc<AppCore>>) -> Result<(), CommandError> { core.refresh_gift_catalog().await }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -53,13 +56,16 @@ pub fn run() {
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let config_path = config_dir.join("config.json");
-            let config = config::load(&config_path).unwrap_or_default();
-            let core = AppCore::new(app.handle().clone(), config_path, config);
+            let (config, config_load_error) = match config::load(&config_path) {
+                Ok(config) => (config, None),
+                Err(error) => (AppConfig::default(), Some(error.message)),
+            };
+            let core = AppCore::new(app.handle().clone(), config_path, config, config_load_error);
             hotkey::register_emergency(core.clone());
             app.manage(core);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_snapshot, connect_live, disconnect_live, save_config, list_targets, select_target, start_automation, stop_automation, emergency_stop, reset_emergency, emit_mock_gift])
+        .invoke_handler(tauri::generate_handler![get_snapshot, connect_live, disconnect_live, save_config, list_targets, select_target, start_automation, stop_automation, emergency_stop, reset_emergency, emit_mock_gift, refresh_gift_catalog])
         .run(tauri::generate_context!())
         .expect("failed to run Zynq desktop application");
 }
